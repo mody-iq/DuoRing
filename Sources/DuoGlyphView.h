@@ -10,4 +10,6 @@
 @property(nonatomic) NSInteger wifiBars;
 @property(nonatomic) NSInteger cellularBars;
 @property(nonatomic, strong) UIColor *foreground;
+@property(nonatomic, copy) NSString *networkType;
++ (NSArray<DuoGlyphView *> *)liveGlyphs;
 @end

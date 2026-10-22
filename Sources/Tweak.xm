@@ -547,10 +547,9 @@ static NSInteger DuoBars(STUIStatusBarSignalView *view, NSInteger maximum) {
     CGRect batteryRect = battery
         ? [battery convertRect:battery.bounds toView:container]
         : area;
-    CGFloat x = CGRectGetMaxX(area) - width;
-    // The battery sits at the screen-edge end of the icon cluster: on the right
-    // in left-to-right layouts and on the left in right-to-left layouts.
-    if (battery && CGRectGetMidX(batteryRect) < CGRectGetMidX(area)) x = CGRectGetMinX(area);
+    // Center the glyph in the area the native icons occupied, so it sits in the
+    // middle of its status-bar region (like the clock) instead of the corner.
+    CGFloat x = CGRectGetMidX(area) - width / 2;
     CGFloat y = CGRectGetMidY(batteryRect) - height / 2;
     x = MAX(CGRectGetMinX(container.bounds), MIN(x, CGRectGetMaxX(container.bounds) - width));
     CGFloat extra = MAX(0, height - (CGRectGetHeight(container.bounds) - 2.0)) / 2.0;

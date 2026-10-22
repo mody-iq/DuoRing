@@ -1,0 +1,11 @@
+Package: local.duoring
+Name: DuoRing
+Version: 1.0.0
+Architecture: iphoneos-arm
+Description: Circular battery, Wi-Fi and cellular status-bar glyph for iOS 16 to 18.7 (RootHide).
+ Port of DuoBar by RBx9 (MIT license).
+Maintainer: DuoRing
+Author: RBx9 (original), DuoRing port
+Section: Tweaks
+Depends: mobilesubstrate, preferenceloader, firmware (>= 16.0)
+Tag: role::tweak

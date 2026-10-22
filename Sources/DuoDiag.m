@@ -24,54 +24,81 @@ static void DuoDiagLog(NSString *format, ...) {
     [handle closeFile];
 }
 
-static BOOL DuoDiagHas(NSString *className, NSString *selectorName) {
-    Class cls = NSClassFromString(className);
-    return cls && class_getInstanceMethod(cls, NSSelectorFromString(selectorName)) != NULL;
+static void DuoDiagDumpMembers(Class cls) {
+    unsigned int count = 0;
+    Ivar *ivars = class_copyIvarList(cls, &count);
+    for (unsigned int i = 0; i < count; i++) {
+        const char *name = ivar_getName(ivars[i]);
+        const char *type = ivar_getTypeEncoding(ivars[i]);
+        DuoDiagLog(@"    ivar %s (%s)", name ? name : "", type ? type : "");
+    }
+    free(ivars);
+    objc_property_t *props = class_copyPropertyList(cls, &count);
+    for (unsigned int i = 0; i < count; i++) {
+        const char *name = property_getName(props[i]);
+        const char *attrs = property_getAttributes(props[i]);
+        DuoDiagLog(@"    prop %s [%s]", name ? name : "", attrs ? attrs : "");
+    }
+    free(props);
+    Method *methods = class_copyMethodList(cls, &count);
+    for (unsigned int i = 0; i < count; i++) {
+        DuoDiagLog(@"    method %s", sel_getName(method_getName(methods[i])));
+    }
+    free(methods);
 }
 
-static void DuoDiagWalk(UIView *view, int depth, int *budget) {
-    if (!view || *budget <= 0 || depth > 14) return;
-    NSString *name = NSStringFromClass(view.class);
-    if ([name containsString:@"Battery"] || [name containsString:@"StatusBar"] ||
-        [name containsString:@"Signal"] || [name containsString:@"Duo"] ||
-        [name containsString:@"STUI"]) {
-        (*budget)--;
-        DuoDiagLog(@"  d%d %@ hidden=%d alpha=%.2f frame=%@", depth, name,
-                   view.hidden, view.alpha, NSStringFromCGRect(view.frame));
+static void DuoDiagDumpClass(NSString *name) {
+    Class cls = NSClassFromString(name);
+    if (!cls) {
+        DuoDiagLog(@"== %@ : MISSING", name);
+        return;
     }
-    for (UIView *sub in view.subviews) DuoDiagWalk(sub, depth + 1, budget);
+    NSMutableString *chain = [NSMutableString string];
+    for (Class c = cls; c; c = class_getSuperclass(c)) {
+        [chain appendFormat:@"%s > ", class_getName(c)];
+    }
+    DuoDiagLog(@"== %@ chain: %@", name, chain);
+    for (Class c = cls; c && c != UIView.class && c != NSObject.class; c = class_getSuperclass(c)) {
+        DuoDiagLog(@"  -- members of %s", class_getName(c));
+        DuoDiagDumpMembers(c);
+    }
+}
+
+static void DuoDiagWalkAll(UIView *view, int depth, int *budget) {
+    if (!view || *budget <= 0 || depth > 8) return;
+    (*budget)--;
+    NSString *indent = [@"" stringByPaddingToLength:(NSUInteger)(depth * 2) withString:@" " startingAtIndex:0];
+    NSMutableString *line = [NSMutableString stringWithFormat:@"%@%@ frame=%@ hidden=%d alpha=%.2f layers=%lu",
+        indent, NSStringFromClass(view.class), NSStringFromCGRect(view.frame),
+        view.hidden, view.alpha, (unsigned long)view.layer.sublayers.count];
+    NSArray<NSString *> *keys = @[@"chargePercent", @"chargingState", @"saverModeActive",
+        @"bodyColor", @"numberOfBars", @"numberOfActiveBars", @"activeColor", @"text",
+        @"batteryLevel", @"percentage", @"state"];
+    for (NSString *key in keys) {
+        SEL selector = NSSelectorFromString(key);
+        if (![view respondsToSelector:selector]) continue;
+        id value = nil;
+        @try { value = [view valueForKey:key]; } @catch (__unused NSException *e) { value = @"<exception>"; }
+        [line appendFormat:@" %@=%@", key, value];
+    }
+    DuoDiagLog(@"%@", line);
+    for (UIView *sub in view.subviews) DuoDiagWalkAll(sub, depth + 1, budget);
 }
 
 static void DuoDiagScan(void) {
-    DuoDiagLog(@"--- view scan (after 20s) ---");
+    DuoDiagLog(@"--- status bar view scan (after 20s) ---");
     SEL selector = NSSelectorFromString(@"allWindowsIncludingInternalWindows:onlyVisibleWindows:");
     NSArray *windows = nil;
     if ([UIWindow respondsToSelector:selector]) {
         windows = ((id (*)(id, SEL, BOOL, BOOL))objc_msgSend)(UIWindow.class, selector, YES, NO);
     }
-    DuoDiagLog(@"windows: %lu", (unsigned long)windows.count);
-    int budget = 150;
     for (UIWindow *window in windows) {
-        DuoDiagLog(@"window %@ level=%.0f", NSStringFromClass(window.class), window.windowLevel);
-        DuoDiagWalk(window, 0, &budget);
-    }
-    DuoDiagLog(@"--- scan done ---");
-}
-
-static void DuoDiagClasses(void) {
-    unsigned int count = 0;
-    Class *list = objc_copyClassList(&count);
-    int printed = 0;
-    DuoDiagLog(@"--- matching classes ---");
-    for (unsigned int i = 0; i < count && printed < 80; i++) {
-        const char *name = class_getName(list[i]);
-        if (strstr(name, "BatteryView") || strstr(name, "StatusBarSignal") ||
-            strstr(name, "UIStatusBar") || strstr(name, "STUIStatusBar")) {
-            DuoDiagLog(@"  %s", name);
-            printed++;
+        if ([NSStringFromClass(window.class) isEqualToString:@"SBStatusBarWindow"]) {
+            int budget = 150;
+            DuoDiagWalkAll(window, 0, &budget);
         }
     }
-    free(list);
+    DuoDiagLog(@"--- scan done ---");
 }
 
 __attribute__((constructor)) static void DuoDiagInit(void) {
@@ -80,27 +107,16 @@ __attribute__((constructor)) static void DuoDiagInit(void) {
         if (![bundleID isEqualToString:@"com.apple.springboard"]) return;
         [[NSData data] writeToFile:kDuoLogPath atomically:NO];
         NSOperatingSystemVersion v = NSProcessInfo.processInfo.operatingSystemVersion;
-        DuoDiagLog(@"DuoRing diag: loaded in %@, iOS %ld.%ld.%ld", bundleID,
-                   (long)v.majorVersion, (long)v.minorVersion, (long)v.patchVersion);
-        NSArray<NSString *> *names = @[@"_UIBatteryView", @"_UIStatusBarSignalView",
-            @"_UIStatusBarWifiSignalView", @"_UIStatusBarCellularSignalView", @"_UIStatusBar",
-            @"_UIStatusBarForegroundView", @"_UIStatusBarStringView", @"_UIStatusBarImageView",
-            @"CCUIStatusBar", @"STUIStatusBar", @"STUIStatusBarForegroundView"];
-        for (NSString *name in names) {
-            DuoDiagLog(@"class %@ exists=%d", name, NSClassFromString(name) != Nil);
-        }
-        for (NSString *sel in @[@"chargePercent", @"chargingState", @"saverModeActive",
-                                @"bodyColor", @"setChargePercent:", @"setChargingState:",
-                                @"setSaverModeActive:", @"setBodyColor:"]) {
-            DuoDiagLog(@"_UIBatteryView %@ = %d", sel, DuoDiagHas(@"_UIBatteryView", sel));
-        }
-        for (NSString *sel in @[@"numberOfBars", @"numberOfActiveBars", @"activeColor",
-                                @"setNumberOfBars:", @"setNumberOfActiveBars:", @"setActiveColor:"]) {
-            DuoDiagLog(@"_UIStatusBarSignalView %@ = %d", sel, DuoDiagHas(@"_UIStatusBarSignalView", sel));
-        }
-        DuoDiagLog(@"wifi _updateActiveBars = %d", DuoDiagHas(@"_UIStatusBarWifiSignalView", @"_updateActiveBars"));
-        DuoDiagLog(@"cellular _updateActiveBars = %d", DuoDiagHas(@"_UIStatusBarCellularSignalView", @"_updateActiveBars"));
-        DuoDiagClasses();
+        DuoDiagLog(@"DuoRing diag v2: iOS %ld.%ld.%ld", (long)v.majorVersion,
+                   (long)v.minorVersion, (long)v.patchVersion);
+        NSArray<NSString *> *targets = @[
+            @"STUIStatusBarBatteryView", @"STUIStatusBarWifiSignalView",
+            @"STUIStatusBarDualCellularSignalView", @"STUIStatusBarCellularSmallSignalView",
+            @"STUIStatusBarCellularFlatSignalView", @"STUIStatusBarForegroundView",
+            @"STUIStatusBar", @"STUIStatusBarBatteryItem", @"STUIStatusBarWifiItem",
+            @"STUIStatusBarCellularItem"
+        ];
+        for (NSString *name in targets) DuoDiagDumpClass(name);
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(20 * NSEC_PER_SEC)),
                        dispatch_get_main_queue(), ^{
             DuoDiagScan();

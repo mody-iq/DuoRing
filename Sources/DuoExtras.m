@@ -5,7 +5,8 @@
 #import "DuoGlyphView.h"
 
 // Hides the stock network-type text (LTE, 5G...) and the stock "62%" text in
-// Control Center while DuoRing is visible, and hands the network type to the glyph.
+// Control Center while DuoRing is visible, hands the network type to the glyph,
+// and hides the Control Center glyph as soon as Control Center is closed.
 
 static NSHashTable<UIView *> *DuoExtraHidden;
 
@@ -41,6 +42,23 @@ static BOOL DuoExtraIsNetworkType(NSString *text) {
             @"^(LTE\\+?|LTE-A|E|EDGE|GPRS|1X|[2-5]G\\+?( ?(UC|UW|E))?)$" options:0 error:nil];
     });
     return [expression numberOfMatchesInString:value options:0 range:NSMakeRange(0, value.length)] > 0;
+}
+
+// YES only when SpringBoard reports that Control Center is definitely not shown.
+static BOOL DuoExtraControlCenterClosed(void) {
+    Class cls = NSClassFromString(@"SBControlCenterController");
+    SEL shared = NSSelectorFromString(@"sharedInstance");
+    if (!cls || ![cls respondsToSelector:shared]) return NO;
+    id controller = ((id (*)(id, SEL))objc_msgSend)(cls, shared);
+    if (!controller) return NO;
+    BOOL known = NO, visible = NO;
+    for (NSString *name in @[@"isVisible", @"isPresented"]) {
+        SEL selector = NSSelectorFromString(name);
+        if (![controller respondsToSelector:selector]) continue;
+        known = YES;
+        if (((BOOL (*)(id, SEL))objc_msgSend)(controller, selector)) visible = YES;
+    }
+    return known && !visible;
 }
 
 static NSArray<UIView *> *DuoExtraViews(UIView *root, UIView *skip, NSUInteger limit) {
@@ -79,8 +97,20 @@ static void DuoExtraRestore(UIView *view) {
 static void DuoExtraTick(void) {
     NSMutableSet<UIView *> *matched = [NSMutableSet set];
     BOOL anyVisible = NO;
+    BOOL controlCenterClosed = DuoExtraControlCenterClosed();
     for (DuoGlyphView *glyph in [DuoGlyphView liveGlyphs]) {
         UIView *container = glyph.superview;
+
+        // The glyph that lives inside Control Center must disappear as soon as
+        // Control Center is closed, instead of lingering until its window is torn down.
+        if (glyph.window && [NSStringFromClass(glyph.window.class) containsString:@"ControlCenter"]) {
+            [CATransaction begin];
+            [CATransaction setDisableActions:YES];
+            glyph.layer.opacity = controlCenterClosed ? 0.0f : 1.0f;
+            [CATransaction commit];
+            [container setNeedsLayout];
+        }
+
         if (!glyph.window || !container || glyph.hidden || glyph.alpha < 0.01) {
             glyph.networkType = nil;
             continue;

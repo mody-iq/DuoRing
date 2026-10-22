@@ -14,20 +14,20 @@
 @property(nonatomic, copy) UIColor *bodyColor;
 @end
 
-@interface _UIStatusBarSignalView : UIView
+@interface STUIStatusBarSignalView : UIView
 @property(nonatomic) long long numberOfActiveBars;
 @property(nonatomic) long long numberOfBars;
 @property(nonatomic, copy) UIColor *activeColor;
 @end
-@interface _UIStatusBarWifiSignalView : _UIStatusBarSignalView @end
+@interface STUIStatusBarWifiSignalView : STUIStatusBarSignalView @end
 // When connected to another iPhone's Personal Hotspot, iOS often
 // swaps the Wi-Fi strength view for a status-bar image/icon view.
-@interface _UIStatusBarImageView : UIImageView @end
-@interface _UIStatusBarCellularSignalView : _UIStatusBarSignalView @end
-@interface _UIStatusBarForegroundView : UIView @end
-@interface _UIStatusBar : UIView @end
+@interface STUIStatusBarImageView : UIImageView @end
+@interface STUIStatusBarCellularSignalView : STUIStatusBarSignalView @end
+@interface STUIStatusBarForegroundView : UIView @end
+@interface STUIStatusBar : UIView @end
 @interface CCUIStatusBar : UIView @end
-@interface _UIStatusBarStringView : UIView
+@interface STUIStatusBarStringView : UIView
 @property(nonatomic, copy) NSString *text;
 @end
 
@@ -54,7 +54,7 @@ static CGFloat DuoReadSizeScale(void) {
     return (CGFloat)fmax(0.70, fmin(1.40, scale));
 }
 static BOOL DuoSpringBoard = NO;
-static NSHashTable<_UIStatusBarStringView *> *DuoPercentageViews;
+static NSHashTable<STUIStatusBarStringView *> *DuoPercentageViews;
 static NSHashTable<DuoStatusController *> *DuoControllers;
 static id DuoActivationObserver;
 
@@ -64,7 +64,7 @@ static BOOL DuoReadEnabled(void) {
     return [value isKindOfClass:NSNumber.class] ? [value boolValue] : YES;
 }
 
-// Control Center uses a separate _UIStatusBarStringView for the large "86%" text.
+// Control Center uses a separate STUIStatusBarStringView for the large "86%" text.
 // This view is not one of the native battery/signal glyphs covered below.
 static BOOL DuoIsBatteryPercentage(NSString *text) {
     if (![text isKindOfClass:NSString.class]) return NO;
@@ -95,7 +95,7 @@ static BOOL DuoControlCenterVisible(UIView *view) {
     return NO;
 }
 
-static void DuoSyncPercentage(_UIStatusBarStringView *view) {
+static void DuoSyncPercentage(STUIStatusBarStringView *view) {
     NSString *saved = objc_getAssociatedObject(view, &DuoSavedPercentageKey);
     if (saved && (!DuoEnabled || !DuoControlCenterVisible(view))) {
         [view setText:saved];
@@ -406,7 +406,7 @@ static void DuoRestoreRotationIndicator(UIView *indicator) {
                              OBJC_ASSOCIATION_RETAIN_NONATOMIC);
 }
 
-static NSInteger DuoBars(_UIStatusBarSignalView *view, NSInteger maximum) {
+static NSInteger DuoBars(STUIStatusBarSignalView *view, NSInteger maximum) {
     long long total = view.numberOfBars;
     if (total <= 0) return 0;
     double fraction = fmax(0, fmin(1, (double)view.numberOfActiveBars / (double)total));
@@ -477,11 +477,11 @@ static NSInteger DuoBars(_UIStatusBarSignalView *view, NSInteger maximum) {
             if (isfinite(level) && level >= 0 && level <= 1) battery = candidate;
         } else if ([icon isKindOfClass:DuoWifiClass]) {
             wifiVisible = YES;
-            wifiBars = MAX(wifiBars, DuoBars((_UIStatusBarSignalView *)icon, 3));
+            wifiBars = MAX(wifiBars, DuoBars((STUIStatusBarSignalView *)icon, 3));
 
         } else if ([icon isKindOfClass:DuoCellularClass]) {
             // With multiple SIM indicators, use the strongest visible line.
-            cellularBars = MAX(cellularBars, DuoBars((_UIStatusBarSignalView *)icon, 4));
+            cellularBars = MAX(cellularBars, DuoBars((STUIStatusBarSignalView *)icon, 4));
         } else if (DuoIsHotspotIndicator(icon)) {
             hotspotVisible = YES;
             hotspotImage = DuoHotspotImageForView(icon) ?: hotspotImage;
@@ -548,6 +548,9 @@ static NSInteger DuoBars(_UIStatusBarSignalView *view, NSInteger maximum) {
         ? [battery convertRect:battery.bounds toView:container]
         : area;
     CGFloat x = CGRectGetMaxX(area) - width;
+    // The battery sits at the screen-edge end of the icon cluster: on the right
+    // in left-to-right layouts and on the left in right-to-left layouts.
+    if (battery && CGRectGetMidX(batteryRect) < CGRectGetMidX(area)) x = CGRectGetMinX(area);
     CGFloat y = CGRectGetMidY(batteryRect) - height / 2;
     x = MAX(CGRectGetMinX(container.bounds), MIN(x, CGRectGetMaxX(container.bounds) - width));
     CGFloat extra = MAX(0, height - (CGRectGetHeight(container.bounds) - 2.0)) / 2.0;
@@ -726,7 +729,7 @@ static void DuoReloadPreferences(void) {
     CGFloat newScale = DuoReadSizeScale();
     DuoEnabled = enabled;
     DuoSizeScale = newScale;
-    for (_UIStatusBarStringView *view in DuoPercentageViews.allObjects) DuoSyncPercentage(view);
+    for (STUIStatusBarStringView *view in DuoPercentageViews.allObjects) DuoSyncPercentage(view);
     NSArray<DuoStatusController *> *controllers = DuoControllers.allObjects;
     for (DuoStatusController *controller in controllers) [controller update];
     if (!enabled) {
@@ -750,7 +753,7 @@ static void DuoPreferencesDidChange(CFNotificationCenterRef center, void *observ
 }
 
 %group DuoPercentageHooks
-%hook _UIStatusBarStringView
+%hook STUIStatusBarStringView
 - (void)setText:(NSString *)text {
     if (DuoEnabled && DuoControlCenterVisible(self) && DuoIsBatteryPercentage(text)) {
         objc_setAssociatedObject(self, &DuoSavedPercentageKey, text, OBJC_ASSOCIATION_COPY_NONATOMIC);
@@ -808,7 +811,7 @@ static void DuoPreferencesDidChange(CFNotificationCenterRef center, void *observ
 %end
 
 %group DuoSignalDataHooks
-%hook _UIStatusBarSignalView
+%hook STUIStatusBarSignalView
 - (void)setNumberOfActiveBars:(long long)bars {
     %orig;
     [self setNeedsLayout];
@@ -833,7 +836,7 @@ static void DuoPreferencesDidChange(CFNotificationCenterRef center, void *observ
 %end
 
 %group DuoWifiHooks
-%hook _UIStatusBarWifiSignalView
+%hook STUIStatusBarWifiSignalView
 - (void)layoutSubviews {
     %orig;
     DuoRegisterIcon(self);
@@ -847,7 +850,7 @@ static void DuoPreferencesDidChange(CFNotificationCenterRef center, void *observ
 %end
 
 %group DuoHotspotImageHooks
-%hook _UIStatusBarImageView
+%hook STUIStatusBarImageView
 - (void)setImage:(UIImage *)image {
     %orig;
     if (DuoIsHotspotIndicator(self)) DuoRegisterIcon(self);
@@ -868,7 +871,7 @@ static void DuoPreferencesDidChange(CFNotificationCenterRef center, void *observ
 %end
 
 %group DuoCellularHooks
-%hook _UIStatusBarCellularSignalView
+%hook STUIStatusBarCellularSignalView
 - (void)layoutSubviews {
     %orig;
     DuoRegisterIcon(self);
@@ -882,7 +885,7 @@ static void DuoPreferencesDidChange(CFNotificationCenterRef center, void *observ
 %end
 
 %group DuoForegroundHooks
-%hook _UIStatusBarForegroundView
+%hook STUIStatusBarForegroundView
 - (void)layoutSubviews {
     %orig;
     DuoScanHotspotIndicators(self);
@@ -897,7 +900,7 @@ static void DuoPreferencesDidChange(CFNotificationCenterRef center, void *observ
 %end
 
 %group DuoStatusBarHooks
-%hook _UIStatusBar
+%hook STUIStatusBar
 - (void)layoutSubviews {
     %orig;
     DuoScanHotspotIndicators(self);
@@ -927,7 +930,7 @@ static void DuoPreferencesDidChange(CFNotificationCenterRef center, void *observ
 %end
 
 %group DuoWifiUpdateHooks
-%hook _UIStatusBarWifiSignalView
+%hook STUIStatusBarWifiSignalView
 - (void)_updateActiveBars {
     %orig;
     DuoRegisterIcon(self);
@@ -937,7 +940,7 @@ static void DuoPreferencesDidChange(CFNotificationCenterRef center, void *observ
 %end
 
 %group DuoCellularUpdateHooks
-%hook _UIStatusBarCellularSignalView
+%hook STUIStatusBarCellularSignalView
 - (void)_updateActiveBars {
     %orig;
     DuoRegisterIcon(self);
@@ -964,15 +967,15 @@ static BOOL DuoHasSelectors(Class cls, NSArray<NSString *> *selectors) {
         DuoEnabled = DuoReadEnabled();
         DuoSizeScale = DuoReadSizeScale();
         DuoBatteryClass = NSClassFromString(@"_UIBatteryView");
-        DuoWifiClass = NSClassFromString(@"_UIStatusBarWifiSignalView");
-        DuoCellularClass = NSClassFromString(@"_UIStatusBarCellularSignalView");
-        DuoForegroundClass = NSClassFromString(@"_UIStatusBarForegroundView");
-        DuoStatusBarClass = NSClassFromString(@"_UIStatusBar");
+        DuoWifiClass = NSClassFromString(@"STUIStatusBarWifiSignalView");
+        DuoCellularClass = NSClassFromString(@"STUIStatusBarCellularSignalView");
+        DuoForegroundClass = NSClassFromString(@"STUIStatusBarForegroundView");
+        DuoStatusBarClass = NSClassFromString(@"STUIStatusBar");
         // Enable the complete composition only if all data sources are supported.
         BOOL batteryOK = DuoHasSelectors(DuoBatteryClass,
             @[@"chargePercent", @"chargingState", @"saverModeActive", @"bodyColor",
               @"setChargePercent:", @"setChargingState:", @"setSaverModeActive:", @"setBodyColor:"]);
-        BOOL signalOK = DuoHasSelectors(NSClassFromString(@"_UIStatusBarSignalView"),
+        BOOL signalOK = DuoHasSelectors(NSClassFromString(@"STUIStatusBarSignalView"),
             @[@"numberOfBars", @"numberOfActiveBars", @"activeColor",
               @"setNumberOfBars:", @"setNumberOfActiveBars:", @"setActiveColor:"]);
         BOOL wifiOK = DuoWifiClass && [DuoWifiClass isSubclassOfClass:UIView.class];
@@ -997,14 +1000,14 @@ static BOOL DuoHasSelectors(Class cls, NSArray<NSString *> *selectors) {
             UIApplicationDidBecomeActiveNotification object:nil queue:NSOperationQueue.mainQueue
             usingBlock:refreshStatusBars];
         DuoActivationObserver = @[foregroundObserver, activeObserver];
-        if (DuoSpringBoard && NSClassFromString(@"_UIStatusBarStringView")) %init(DuoPercentageHooks);
+        if (DuoSpringBoard && NSClassFromString(@"STUIStatusBarStringView")) %init(DuoPercentageHooks);
         %init(DuoBatteryHooks);
         %init(DuoSignalDataHooks);
         %init(DuoWifiHooks);
         %init(DuoCellularHooks);
         if (DuoHasSelectors(DuoWifiClass, @[@"_updateActiveBars"])) %init(DuoWifiUpdateHooks);
         if (DuoHasSelectors(DuoCellularClass, @[@"_updateActiveBars"])) %init(DuoCellularUpdateHooks);
-        if (NSClassFromString(@"_UIStatusBarImageView")) %init(DuoHotspotImageHooks);
+        if (NSClassFromString(@"STUIStatusBarImageView")) %init(DuoHotspotImageHooks);
         %init(DuoStatusBarHooks);
         if (NSClassFromString(@"CCUIStatusBar")) %init(DuoControlCenterStatusBarHooks);
         if (DuoForegroundClass) {

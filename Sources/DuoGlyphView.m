@@ -3,6 +3,8 @@
 
 static CGFloat DuoRadians(CGFloat degrees) { return degrees * (CGFloat)M_PI / 180.0; }
 
+static NSHashTable<DuoGlyphView *> *DuoLiveGlyphs;
+
 @interface DuoGlyphView ()
 @property(nonatomic, strong) UIImageView *hotspotImageView;
 @end
@@ -18,6 +20,10 @@ static void DuoArc(CGPoint center, CGFloat radius, CGFloat start, CGFloat end, U
 }
 
 @implementation DuoGlyphView
+
++ (NSArray<DuoGlyphView *> *)liveGlyphs {
+    return DuoLiveGlyphs ? DuoLiveGlyphs.allObjects : @[];
+}
 
 - (instancetype)initWithFrame:(CGRect)frame {
     if ((self = [super initWithFrame:frame])) {
@@ -42,6 +48,16 @@ static void DuoArc(CGPoint center, CGFloat radius, CGFloat start, CGFloat end, U
     return self;
 }
 
+- (void)didMoveToWindow {
+    [super didMoveToWindow];
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        DuoLiveGlyphs = [NSHashTable weakObjectsHashTable];
+    });
+    if (self.window) [DuoLiveGlyphs addObject:self];
+    else [DuoLiveGlyphs removeObject:self];
+}
+
 - (void)layoutSubviews {
     [super layoutSubviews];
     CGFloat scale = MIN(self.bounds.size.width / 32.0, self.bounds.size.height / 34.0);
@@ -49,6 +65,13 @@ static void DuoArc(CGPoint center, CGFloat radius, CGFloat start, CGFloat end, U
     CGFloat top = (self.bounds.size.height - 34.0 * scale) / 2.0;
     self.hotspotImageView.frame = CGRectMake(left + 8.5 * scale, top + 12.5 * scale,
                                               15.0 * scale, 10.0 * scale);
+}
+
+- (void)setNetworkType:(NSString *)networkType {
+    NSString *value = networkType.length ? [networkType copy] : nil;
+    if (value == _networkType || [value isEqualToString:_networkType]) return;
+    _networkType = value;
+    [self setNeedsDisplay];
 }
 
 - (void)setHotspotActive:(BOOL)hotspotActive {
@@ -116,6 +139,20 @@ static void DuoArc(CGPoint center, CGFloat radius, CGFloat start, CGFloat end, U
         CGContextScaleCTM(context, 0.78, 0.78);
         [self drawWiFiWithForeground:foreground inactive:inactive];
         CGContextRestoreGState(context);
+    } else if (self.networkType.length) {
+        // Mobile-data type (LTE, 5G...) is drawn in the middle of the ring,
+        // where the Wi-Fi symbol would normally be.
+        NSString *type = self.networkType;
+        CGFloat size = type.length <= 2 ? 8.5 : (type.length == 3 ? 7.0 : 5.8);
+        UIFont *typeFont = [UIFont systemFontOfSize:size weight:UIFontWeightHeavy];
+        NSMutableParagraphStyle *typeParagraph = [NSMutableParagraphStyle new];
+        typeParagraph.alignment = NSTextAlignmentCenter;
+        CGRect typeArea = CGRectMake(6, 17.5 - typeFont.lineHeight / 2, 20, typeFont.lineHeight);
+        [type drawInRect:typeArea withAttributes:@{
+            NSFontAttributeName: typeFont,
+            NSForegroundColorAttributeName: foreground,
+            NSParagraphStyleAttributeName: typeParagraph,
+        }];
     }
 
     NSInteger cellular = MAX(0, MIN(4, self.cellularBars));

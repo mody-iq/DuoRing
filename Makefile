@@ -6,7 +6,7 @@ INSTALL_TARGET_PROCESSES = SpringBoard
 include $(THEOS)/makefiles/common.mk
 
 TWEAK_NAME = DuoRing
-DuoRing_FILES = Sources/Tweak.xm Sources/DuoGlyphView.m
+DuoRing_FILES = Sources/Tweak.xm Sources/DuoGlyphView.m Sources/DuoDiag.m
 DuoRing_CFLAGS = -fobjc-arc -Wall -Wextra
 DuoRing_FRAMEWORKS = UIKit QuartzCore CoreFoundation
 

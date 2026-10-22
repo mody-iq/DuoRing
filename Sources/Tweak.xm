@@ -547,20 +547,19 @@ static NSInteger DuoBars(STUIStatusBarSignalView *view, NSInteger maximum) {
     CGRect batteryRect = battery
         ? [battery convertRect:battery.bounds toView:container]
         : area;
-    // Center the glyph in the area the native icons occupied, so it sits in the
-    // middle of its status-bar region (like the clock) instead of the corner.
-    CGFloat x = CGRectGetMidX(area) - width / 2;
+    BOOL inControlCenter = DuoControlCenterVisible(container);
+    // Normal status bar: center the glyph in the area the native icons occupied,
+    // so it sits in the middle of its region (like the clock). Control Center:
+    // the icons are spread across the whole width (battery on one side, Wi-Fi and
+    // signal beside the carrier names), so the glyph goes where the battery was.
+    CGFloat x = (inControlCenter && battery)
+        ? CGRectGetMidX(batteryRect) - width / 2
+        : CGRectGetMidX(area) - width / 2;
     CGFloat y = CGRectGetMidY(batteryRect) - height / 2;
     x = MAX(CGRectGetMinX(container.bounds), MIN(x, CGRectGetMaxX(container.bounds) - width));
     CGFloat extra = MAX(0, height - (CGRectGetHeight(container.bounds) - 2.0)) / 2.0;
     y = MAX(CGRectGetMinY(container.bounds) + 1 - extra,
         MIN(y, CGRectGetMaxY(container.bounds) - height - 1 + extra));
-
-    BOOL inControlCenter = DuoControlCenterVisible(container);
-    if (inControlCenter) {
-        // Preserve the hotspot beta's stable Control Center glyph position.
-        x = MIN(CGRectGetMaxX(container.bounds) - width, x + 12);
-    }
 
     [CATransaction begin];
     [CATransaction setDisableActions:YES];

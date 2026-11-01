@@ -1,0 +1,9 @@
+Package: com.mody.hellomody
+Name: HelloMody
+Version: 1.0.0
+Architecture: iphoneos-arm
+Description: Minimal jailbreak tweak for RootHide.
+Maintainer: mody
+Author: mody
+Section: Tweaks
+Depends: mobilesubstrate
